@@ -1,0 +1,55 @@
+name: UNI bot (poll)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unitrade-bot
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --quiet -r requirements.txt
+
+      - name: Poll Telegram updates
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ALLOWED_CHAT_IDS: ${{ secrets.ALLOWED_CHAT_IDS }}
+        run: python bot.py --once
+
+      - name: Commit offset
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f bot_state.json ]; then
+            echo "bot_state.json ещё не создан"
+            exit 0
+          fi
+          git add -f bot_state.json
+          if git diff --cached --quiet; then
+            echo "offset без изменений"
+            exit 0
+          fi
+          git commit -q -m "chore: update bot offset"
+          for i in 1 2 3; do
+            git push && break
+            git pull --rebase -q || true
+            sleep 3
+          done
