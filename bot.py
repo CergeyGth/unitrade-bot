@@ -38,6 +38,7 @@ STATE_FILE = ROOT / "bot_state.json"
 API = "https://api.telegram.org/bot%s/%s"
 TIMEOUT = 30
 MAX_MSG = 4000
+FAILED = {"n": 0}  # счётчик неудачных отправок (чтобы запуск в CI краснел)
 
 HELP = (
     "🤖 UNI Monitor\n\n"
@@ -118,6 +119,7 @@ def send(token, chat_id, text):
         r = tg_call(token, "sendMessage", chat_id=chat_id,
                     text=text[i:i + MAX_MSG], disable_web_page_preview="true")
         if not r.get("ok"):
+            FAILED["n"] += 1
             print("sendMessage error:", r)
 
 
@@ -139,6 +141,8 @@ def send_document(token, chat_id, filename, content, caption=""):
                           timeout=TIMEOUT + 30)
         res = r.json()
         print("sendDocument:", "OK" if res.get("ok") else res)
+        if not res.get("ok"):
+            FAILED["n"] += 1
         return res
     except Exception as e:  # noqa: BLE001
         print("sendDocument error:", e)
@@ -270,6 +274,18 @@ def main():
               "или задайте переменную BOT_TOKEN")
         sys.exit(1)
 
+    # Проверяем токен сразу — иначе ошибка «спрячется» в зелёном запуске
+    try:
+        me = requests.get(API % (token, "getMe"), timeout=TIMEOUT).json()
+    except Exception as e:  # noqa: BLE001
+        print("Не удалось связаться с Telegram:", e)
+        sys.exit(4)
+    if not me.get("ok"):
+        print("Telegram не принял токен:", me)
+        sys.exit(4)
+    info = me.get("result") or {}
+    print("Бот: @%s (id %s)" % (info.get("username"), info.get("id")))
+
     trackers = build_trackers(load_tracker_names())
     if not trackers:
         print("Нет активных сайтов — проверьте trackers.txt")
@@ -287,13 +303,13 @@ def main():
         except Exception as e:  # noqa: BLE001
             print("getUpdates error:", e)
             if args.once:
-                return
+                sys.exit(5)
             time.sleep(5)
             continue
         if not data.get("ok"):
             print("Telegram error:", data)
             if args.once:
-                return
+                sys.exit(5)
             time.sleep(5)
             continue
         for upd in data.get("result", []):
@@ -306,6 +322,10 @@ def main():
             save_offset(offset)
         if args.once:
             break
+
+    if FAILED["n"]:
+        print("Ошибок отправки в Telegram: %d" % FAILED["n"])
+        sys.exit(6)
 
 
 if __name__ == "__main__":
