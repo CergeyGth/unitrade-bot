@@ -1,0 +1,9 @@
+.env
+token.txt
+unitrade.csv
+bot.log
+bot.err
+bot_state.json
+__pycache__/
+*.pyc
+.venv/
