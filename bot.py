@@ -163,21 +163,38 @@ def download_file(token, file_id):
 
 
 def build_and_send_csv(token, chat_id, nums, trackers):
-    """Строит CSV по номерам и отправляет файлом."""
+    """Два варианта ответа: unitrade (10 этапов) и track24 (статус строкой)."""
     api = next((t for t in trackers if getattr(t, "name", "") == "unitrade"), None)
     if api is None:
         send(token, chat_id, process("\n".join(nums), trackers))
         return
     send(token, chat_id, "Обрабатываю %d номеров…" % len(nums))
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+    # 1) unitrade — 10 этапов
     try:
         items = api.fetch_items(nums)
         data = report.build_csv(nums, items, offset=TZ_OFFSET)
-        fname = "unitrade_%s.csv" % datetime.now().strftime("%Y%m%d_%H%M")
         found = sum(1 for n in nums if items.get(n))
-        send_document(token, chat_id, fname, data.encode("utf-8"),
-                      caption="Готово: найдено %d из %d" % (found, len(nums)))
+        send_document(token, chat_id, "unitrade_%s.csv" % stamp, data.encode("utf-8"),
+                      caption="1/2 · unitrade: найдено %d из %d" % (found, len(nums)))
     except Exception as e:  # noqa: BLE001
-        send(token, chat_id, "Ошибка при формировании CSV: %s" % type(e).__name__)
+        send(token, chat_id, "Ошибка unitrade: %s" % type(e).__name__)
+
+    # 2) track24.ru — только текущий статус строкой (по одному номеру, медленнее)
+    t24 = next((t for t in trackers if getattr(t, "name", "") == "track24"), None)
+    if t24 is None:
+        return
+    send(token, chat_id, "Запрашиваю track24 (по одному номеру, ~%d сек)…"
+         % max(5, int(0.6 * len(nums))))
+    try:
+        statuses = t24.track_many(nums)
+        data2 = report.build_track24_csv(nums, statuses)
+        found2 = sum(1 for n in nums if statuses.get(n))
+        send_document(token, chat_id, "track24_%s.csv" % stamp, data2.encode("utf-8"),
+                      caption="2/2 · track24: найдено %d из %d" % (found2, len(nums)))
+    except Exception as e:  # noqa: BLE001
+        send(token, chat_id, "Ошибка track24: %s" % type(e).__name__)
 
 
 def handle_document(token, chat_id, doc, trackers):

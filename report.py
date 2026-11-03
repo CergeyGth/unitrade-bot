@@ -38,6 +38,16 @@ def _fmt(iso, offset):
         return ""
 
 
+def build_track24_csv(numbers, statuses):
+    """Второй вариант ответа: статусы track24.ru (по одной строке на номер)."""
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+    w.writerow(["Номер", "Статус track24.ru"])
+    for n in numbers:
+        w.writerow([n, statuses.get(n) or ""])
+    return "\ufeff" + buf.getvalue()
+
+
 def build_csv(numbers, items, offset=10):
     """Возвращает текст CSV (с BOM). items: dict номер -> сырой объект API."""
     buf = io.StringIO()
